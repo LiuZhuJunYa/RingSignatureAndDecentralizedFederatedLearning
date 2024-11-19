@@ -1,0 +1,3 @@
+module RingSignatureAndDecentralizedFederatedLearning
+
+go 1.23
