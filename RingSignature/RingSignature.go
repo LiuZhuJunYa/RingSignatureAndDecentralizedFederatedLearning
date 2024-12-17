@@ -2,223 +2,357 @@ package RingSignature
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
-	"sync"
 )
 
-// 在实现签名时需要五种类型：消息、签名者、环成员列表、为环成员选择的随机点集、签名信息结果
-
-// Message 第一种类型：消息类型
-type Message struct {
-	Text []byte            // 消息字符串，明文信息
-	SK_M *ecdsa.PrivateKey // 为了对当前消息签名，而专门选择的一个随机数密钥
-	PK_M *ecdsa.PublicKey  // 根据私钥生成的专门针对当前消息的公钥
-}
-
-// Signer 第二种类型：签名者类型
-type Signer struct {
-	SK_S *ecdsa.PrivateKey // 签名者的 ECC 私钥
-	PK_S *ecdsa.PublicKey  // 签名者的 ECC 公钥
-	R_S  *ecdsa.PublicKey  // 签名者自己计算得到的参数 R_S
-	C_S  *ecdsa.PrivateKey // 签名者自己计算得到的参数 C_S
-	S_S  *ecdsa.PrivateKey // 签名者自己计算得到的参数 S_S
-}
-
-//// RingList 第三种类型：环成员列表（在当前实验中我们选择是 5 位成员成环）
-//type RingList struct {
-//	// 签名时，签名顺序与签名者排位无关
-//	PK_0 *ecdsa.PublicKey // 第一位成员
-//	PK_1 *ecdsa.PublicKey // 第二位成员
-//	PK_2 *ecdsa.PublicKey // 第三位成员
-//	PK_3 *ecdsa.PublicKey // 第四位成员
-//	PK_4 *ecdsa.PublicKey // 第五位成员
-//}
-
-//// RandomPoint 第四种类型：为环成员选择的随机点集
-//type RandomPoint struct {
-//	U_0 *ecdsa.PublicKey // 第一位成员选择的随机点
-//	U_1 *ecdsa.PublicKey // 第二位成员选择的随机点
-//	U_2 *ecdsa.PublicKey // 第三位成员选择的随机点
-//	U_3 *ecdsa.PublicKey // 第四位成员选择的随机点
-//	U_4 *ecdsa.PublicKey // 第五位成员选择的随机点
-//}
-
-// Result 第五种类型：签名信息结果
-type Result struct {
-	MessageText []byte             // 消息字符串，明文信息
-	PK_M        *ecdsa.PublicKey   // 当前签名消息的主公钥
-	List        []*ecdsa.PublicKey // 环成员公钥信息
-	RandomPoint []*ecdsa.PublicKey // 为环成员选择的随机点集
-	V           *ecdsa.PrivateKey  // 公开的参数V，有限域q内的正整数
-	C           *ecdsa.PrivateKey  // 公开的参数C，有限域q内的正整数
-	T           *ecdsa.PublicKey   // 公开的参数T，通过选择随机数t，计算得到的ECC上的点
-	Pi          *ecdsa.PrivateKey  // 公开的参数Pi，有限域q内的正整数
-}
-
-// Sign 环签名函数
-func Sign(message string, signer *Signer, list []*ecdsa.PublicKey) (sign_result Result, err error) {
-	/* 创建消息类型 */
-	var msg Message
-	msg.Text = []byte(message)
-	// 生成以太坊私钥
-	sk_m, err := crypto.GenerateKey()
-	if err != nil {
-		fmt.Println("生成针对消息的随机数密钥失败......")
-	}
-	// 生成公钥
-	pk_m := sk_m.PublicKey
-	msg.SK_M = sk_m
-	msg.PK_M = &pk_m
-	sign_result.MessageText = []byte(message)
-	sign_result.PK_M = &pk_m
-
-	/* 开始计算签名者中间参数信息 */
-	r_s, err := crypto.GenerateKey()
-	if err != nil {
-		fmt.Println("生成 r_s 随机数失败......")
-	}
-	if r_s.D == sk_m.D {
-		fmt.Println("生成 r_s 随机数与针对消息的随机数密钥相同，请您重新生成")
-	}
-	signer.R_S = &r_s.PublicKey
-	signer.C_S = HashToZq(DotProduct(signer.SK_S, signer.PK_S), signer.R_S)
-	signer.S_S = ComputeS_S(r_s, signer.C_S, msg.SK_M)
-
-	/* 开始签名工作 */
-	// 第一步对于所有 i 不等于 signer 的用户公钥计算 H_i
-	var randomPoint []*ecdsa.PublicKey // 用于存储所有生成的 U_i
-	for i := 0; i < len(list)-1; i++ { // 循环只到 len(list)-1
-		U_iKey, err := crypto.GenerateKey()
-		if err != nil {
-			panic(fmt.Sprintf("Failed to generate U_i: %v", err))
-		}
-		randomPoint = append(randomPoint, &U_iKey.PublicKey)
-	}
-	// 初始化 List_Hi 用于存储 H_i
-	var List_Hi []*ecdsa.PrivateKey
-	var mu sync.Mutex     // 互斥锁保护共享资源
-	var wg sync.WaitGroup // 并发同步
-	// 并行计算 H_i
-	for i := 0; i < len(list)-1; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			U_i := randomPoint[i] // 对应的 U_i
-			H_i := HashToZq(msg.Text, list, U_i)
-			// 保护 List_Hi 的并发安全
-			mu.Lock()
-			List_Hi = append(List_Hi, H_i)
-			mu.Unlock()
-		}(i)
-	}
-	wg.Wait() // 等待所有并发任务完成
-	/* 计算得到 U_i */
+// Verify 验证函数
+func Verify() (Result bool) {
 
 	return
 }
 
-// ComputeS_S 计算 S_S = (r_s - C_S * sk_M) mod q
-func ComputeS_S(r_s, C_S, sk_M *ecdsa.PrivateKey) *ecdsa.PrivateKey {
-	// 获取 secp256k1 曲线和曲线阶 q
-	curve := crypto.S256()
-	curveOrder := curve.Params().N
+// Sign 签名函数
+func Sign(Message string, Signer Signer, PK_List []ecdsa.PublicKey) (Result Result) {
+	msg := CreateMessage(Message)       // 创建签名消息
+	signer := CreateSigner(Signer, msg) // 创建签名者信息
 
-	// 提取私钥值
-	rValue := r_s.D
-	cValue := C_S.D
-	skValue := sk_M.D
+	// 快速打印 Message、Signer 结构体的内容
+	fmt.Printf("Message Details:\n%+v\n", msg)
+	fmt.Printf("Signer Details:\n%+v\n", signer)
 
-	// 计算 S_S = (r_s - C_S * sk_M) mod q
-	product := new(big.Int).Mul(cValue, skValue) // C_S * sk_M
-	result := new(big.Int).Sub(rValue, product)  // r_s - (C_S * sk_M)
-	result.Mod(result, curveOrder)               // 结果取模 q 确保在有限域内
-
-	// 将结果封装为新的 *ecdsa.PrivateKey
-	S_S := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: curve,
-			X:     nil,
-			Y:     nil,
-		},
-		D: result,
-	}
-	S_S.PublicKey.X, S_S.PublicKey.Y = curve.ScalarBaseMult(result.Bytes())
-	return S_S
+	return
 }
 
-// DotProduct 实现椭圆曲线点的标量乘法
-func DotProduct(privateKey *ecdsa.PrivateKey, publicKey *ecdsa.PublicKey) *ecdsa.PublicKey {
-	// 获取 secp256k1 曲线
-	curve := crypto.S256()
+//func Sign(message string, signer *Signer, list []*ecdsa.PublicKey) (sign_result *Result, err error) {
+//
+//	/* 开始签名工作 */
+//	// 第一步对于所有 i 不等于 signer 的用户公钥计算 H_i
+//	var randomPoint []*ecdsa.PublicKey // 用于存储所有生成的 U_i
+//	for i := 0; i < len(list)-1; i++ { // 循环只到 len(list)-1
+//		U_iKey, err := crypto.GenerateKey()
+//		if err != nil {
+//			panic(fmt.Sprintf("生成随机数 U_i 失败: %v", err))
+//		}
+//		randomPoint = append(randomPoint, &U_iKey.PublicKey)
+//	}
+//	// 初始化 List_Hi 用于存储 H_i
+//	List_Hi := make([]*ecdsa.PrivateKey, len(randomPoint)) // 预分配长度，确保顺序一致
+//	var wg sync.WaitGroup                                  // 并发同步
+//	// 并行计算 H_i
+//	for i := 0; i < len(randomPoint); i++ {
+//		wg.Add(1)
+//		go func(i int) {
+//			defer wg.Done()
+//			U_i := randomPoint[i]                // 对应的 U_i
+//			H_i := HashToZq(msg.Text, list, U_i) // 计算 H_i
+//			// 按索引直接存入，确保顺序与 U_i 一致
+//			List_Hi[i] = H_i
+//		}(i)
+//	}
+//	wg.Wait() // 等待所有并发任务完成
+//	/* 第二步计算得到 U_S */
+//	r_S_Pi, err := crypto.GenerateKey() // 随机选择一个 r_S_Pi 属于 Zq*
+//	if err != nil {
+//		panic(fmt.Sprintf("生成随机数 r_S_Pi 失败: %v", err))
+//	}
+//	filteredList, index_PK_S := RemoveSigner(list, signer.PK_S)                     // 剔除签名者公钥并记录其下标
+//	U_S, err := ComputeU_S(r_S_Pi, signer.PK_S, randomPoint, List_Hi, filteredList) // 计算 U_S
+//	if err != nil {
+//		panic(fmt.Sprintf("计算 U_S 失败: %v", err))
+//	}
+//	list = append(filteredList[:index_PK_S], append([]*ecdsa.PublicKey{signer.PK_S}, filteredList[index_PK_S:]...)...) // 将 PK_S 放回原位置
+//	randomPoint = append(randomPoint[:index_PK_S], append([]*ecdsa.PublicKey{U_S}, randomPoint[index_PK_S:]...)...)    // 将 U_S 放到 randomPoint 的对应位置
+//	//sign_result.List = list
+//	//sign_result.RandomPoint = randomPoint
+//	/* 第三步计算 H_S 和 V */
+//	H_S := HashToZq(msg.Text, list, U_S)
+//	List_Hi = append(List_Hi[:index_PK_S], append([]*ecdsa.PrivateKey{H_S}, List_Hi[index_PK_S:]...)...)
+//	V := ComputeV(signer.SK_S, r_S_Pi, H_S)
+//	//sign_result.V = V
+//	/* 第四步计算 T 和 c */
+//	t, err := crypto.GenerateKey() // 随机选择一个 t 属于 Zq*
+//	if err != nil {
+//		panic(fmt.Sprintf("生成随机数 t 失败: %v", err))
+//	}
+//	T := t.PublicKey // 计算 T=t*P
+//	c, err := ComputeC(signer.SK_S, signer.PK_S, msg.PK_M, signer.C_S, signer.S_S)
+//	if err != nil {
+//		panic(fmt.Sprintf("计算 c 失败: %v", err))
+//	}
+//	//sign_result.T = &T
+//	//sign_result.C = c
+//	/* 第五步计算 e 和 pi */
+//	e := HashToZq(list, msg.Text, T, c)
+//	pi, err := ComputePi(t, e, signer.S_S)
+//
+//	/* 公示签名结果 */
+//	sign_result = &Result{
+//		MessageText: msg.Text,
+//		PK_M:        msg.PK_M,
+//		List:        list,
+//		RandomPoint: randomPoint,
+//		V:           V,
+//		C:           c,
+//		T:           &T,
+//		Pi:          pi,
+//	}
+//	return
+//}
+//
+//func Verify(sign *Result) bool {
+//	// 第一步：计算得到所有的 H_i
+//	List_Hi := make([]*ecdsa.PrivateKey, len(sign.RandomPoint)) // 预分配长度，确保顺序一致
+//	var wg sync.WaitGroup                                       // 并发同步
+//	// 并行计算 H_i
+//	for i := 0; i < len(sign.RandomPoint); i++ {
+//		wg.Add(1)
+//		go func(i int) {
+//			defer wg.Done()
+//			U_i := sign.RandomPoint[i]                        // 对应的 U_i
+//			H_i := HashToZq(sign.MessageText, sign.List, U_i) // 计算 H_i
+//			// 按索引直接存入，确保顺序与 U_i 一致
+//			List_Hi[i] = H_i
+//		}(i)
+//	}
+//	wg.Wait() // 等待所有并发任务完成
+//
+//	// 第二步：计算 e
+//	e := HashToZq(sign.List, sign.MessageText, sign.T, sign.C)
+//
+//	// 第三步：先计算哈希的第一部分
+//	sumRandom := ComputeSum(sign.RandomPoint, List_Hi, sign.List)
+//	first := ScalarMultPrivateKeyWithPublicKey(sign.V, sumRandom)
+//	// 然后计算第二部分
+//	second := ComputeHashPart2(sign.C, sign.PK_M, e, sign.T, sign.Pi)
+//	equalPart := HashToZq(first, second)
+//	flag := ComparePrivateKeys(sign.C, equalPart)
+//	return flag
+//}
+//
+//// 比较两个私钥是否相同
+//func ComparePrivateKeys(key1, key2 *ecdsa.PrivateKey) bool {
+//	if key1 == nil || key2 == nil {
+//		return false // 任意一个私钥为 nil，则不相同
+//	}
+//	// 比较私钥值 D
+//	return key1.D.Cmp(key2.D) == 0
+//}
+//
+//// ComputeHashPart2 计算哈希的第二部分内容
+//func ComputeHashPart2(C *ecdsa.PrivateKey, PK_M *ecdsa.PublicKey, e *ecdsa.PrivateKey, T *ecdsa.PublicKey, Pi *ecdsa.PrivateKey) *ecdsa.PublicKey {
+//	curve := crypto.S256()         // secp256k1 曲线
+//	curveOrder := curve.Params().N // 曲线阶 q
+//
+//	// Step 1: 计算 C * PK_M
+//	C_PK_M_X, C_PK_M_Y := curve.ScalarMult(PK_M.X, PK_M.Y, C.D.Bytes())
+//
+//	// Step 2: 计算 Pi * P
+//	Pi_P_X, Pi_P_Y := curve.ScalarBaseMult(Pi.D.Bytes())
+//
+//	// Step 3: 计算 T - Pi * P
+//	T_minus_Pi_P_X, T_minus_Pi_P_Y := curve.Add(T.X, T.Y, new(big.Int).Neg(Pi_P_X), new(big.Int).Neg(Pi_P_Y))
+//
+//	// Step 4: 计算 e^(-1)
+//	eInverse := new(big.Int).ModInverse(e.D, curveOrder)
+//
+//	// Step 5: 计算 e^(-1) * (T - Pi * P)
+//	eInverse_T_minus_Pi_P_X, eInverse_T_minus_Pi_P_Y := curve.ScalarMult(T_minus_Pi_P_X, T_minus_Pi_P_Y, eInverse.Bytes())
+//
+//	// Step 6: 计算 C * PK_M + e^(-1) * (T - Pi * P)
+//	final_X, final_Y := curve.Add(C_PK_M_X, C_PK_M_Y, eInverse_T_minus_Pi_P_X, eInverse_T_minus_Pi_P_Y)
+//
+//	// 构造结果公钥
+//	return &ecdsa.PublicKey{
+//		Curve: curve,
+//		X:     final_X,
+//		Y:     final_Y,
+//	}
+//}
+//
+//// ScalarMultPrivateKeyWithPublicKey 实现 *ecdsa.PrivateKey * *ecdsa.PublicKey
+//func ScalarMultPrivateKeyWithPublicKey(privateKey *ecdsa.PrivateKey, publicKey *ecdsa.PublicKey) *ecdsa.PublicKey {
+//	curve := crypto.S256() // secp256k1 曲线
+//
+//	// 使用椭圆曲线标量乘法公式：result = privateKey.D * publicKey
+//	X, Y := curve.ScalarMult(publicKey.X, publicKey.Y, privateKey.D.Bytes())
+//
+//	// 构造结果公钥
+//	resultPublicKey := &ecdsa.PublicKey{
+//		Curve: curve,
+//		X:     X,
+//		Y:     Y,
+//	}
+//	return resultPublicKey
+//}
+//
+//// Sign 环签名函数
 
-	// 提取私钥值 d 和公钥点 (X, Y)
-	d := privateKey.D
-	pubX := publicKey.X
-	pubY := publicKey.Y
-
-	// 使用椭圆曲线的标量乘法公式：result = d * (pubX, pubY)
-	newX, newY := curve.ScalarMult(pubX, pubY, d.Bytes())
-
-	// 将结果装载为 *ecdsa.PublicKey 并返回
-	result := &ecdsa.PublicKey{
-		Curve: curve,
-		X:     newX,
-		Y:     newY,
-	}
-	return result
-}
-
-// HashToZq 根据输入参数生成符合 secp256k1 曲线要求的私钥
-func HashToZq(args ...interface{}) *ecdsa.PrivateKey {
-	// 获取 secp256k1 曲线实例和曲线阶 q
-	curve := crypto.S256()
-	curveOrder := curve.Params().N
-
-	var concatenated []byte
-
-	// 拼接输入参数为字节数组
-	for _, arg := range args {
-		switch v := arg.(type) {
-		case string:
-			concatenated = append(concatenated, []byte(v)...)
-		case []byte:
-			concatenated = append(concatenated, v...)
-		case *ecdsa.PublicKey:
-			concatenated = append(concatenated, v.X.Bytes()...)
-			concatenated = append(concatenated, v.Y.Bytes()...)
-		case *ecdsa.PrivateKey:
-			concatenated = append(concatenated, v.D.Bytes()...)
-		case *big.Int:
-			concatenated = append(concatenated, v.Bytes()...)
-		default:
-			panic(fmt.Sprintf("Unsupported type: %T", v))
-		}
-	}
-
-	// 计算 SHA256 哈希
-	hash := sha256.Sum256(concatenated)
-	d := new(big.Int).SetBytes(hash[:])
-
-	// 将 d 限制在曲线阶内：d = d mod q
-	d.Mod(d, curveOrder)
-
-	// 特殊情况：如果 d == 0，则设为 1（避免生成无效私钥）
-	if d.Sign() == 0 {
-		d.SetInt64(1)
-	}
-
-	// 使用生成的 d 创建私钥
-	privateKey := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: curve,
-			X:     nil,
-			Y:     nil,
-		},
-		D: d,
-	}
-	privateKey.PublicKey.X, privateKey.PublicKey.Y = curve.ScalarBaseMult(d.Bytes())
-	return privateKey
-}
+//// ComputePi 计算 π 的函数
+//func ComputePi(t, e, S_S *ecdsa.PrivateKey) (*ecdsa.PrivateKey, error) {
+//	curve := crypto.S256()         // secp256k1 曲线
+//	curveOrder := curve.Params().N // 曲线阶 q
+//
+//	// Step 1: 计算 e * S_S
+//	product := new(big.Int).Mul(e.D, S_S.D)
+//	product.Mod(product, curveOrder) // 确保结果在有限域内
+//
+//	// Step 2: 计算 t - (e * S_S)
+//	result := new(big.Int).Sub(t.D, product)
+//	result.Mod(result, curveOrder) // 确保结果在有限域内
+//
+//	// Step 3: 构造结果私钥
+//	privateKey := &ecdsa.PrivateKey{
+//		PublicKey: ecdsa.PublicKey{
+//			Curve: curve,
+//			X:     nil,
+//			Y:     nil,
+//		},
+//		D: result,
+//	}
+//	privateKey.PublicKey.X, privateKey.PublicKey.Y = curve.ScalarBaseMult(result.Bytes())
+//
+//	return privateKey, nil
+//}
+//
+//// ComputeC 计算 c 的函数
+//func ComputeC(SK_S *ecdsa.PrivateKey, PK_S, pk_m *ecdsa.PublicKey, C_S, S_S *ecdsa.PrivateKey) (*ecdsa.PrivateKey, error) {
+//	curve := crypto.S256() // secp256k1 曲线
+//
+//	// Step 1: 计算 T_1 = SK_S * PK_S
+//	T1_X, T1_Y := curve.ScalarMult(PK_S.X, PK_S.Y, SK_S.D.Bytes())
+//
+//	// Step 2: 计算 T_2 = C_S * pk_m + S_S * P
+//	// C_S * pk_m
+//	CS_X, CS_Y := curve.ScalarMult(pk_m.X, pk_m.Y, C_S.D.Bytes())
+//
+//	// S_S * P
+//	SS_X, SS_Y := curve.ScalarBaseMult(S_S.D.Bytes())
+//
+//	// T_2 = C_S * pk_m + S_S * P
+//	T2_X, T2_Y := curve.Add(CS_X, CS_Y, SS_X, SS_Y)
+//
+//	// Step 3: 调用 HashToZq，计算 c
+//	T1 := &ecdsa.PublicKey{Curve: curve, X: T1_X, Y: T1_Y}
+//	T2 := &ecdsa.PublicKey{Curve: curve, X: T2_X, Y: T2_Y}
+//
+//	c := HashToZq(T1, T2)
+//	return c, nil
+//}
+//
+//// ComputeV 计算 V
+//func ComputeV(SK_S, r_S_Pi, H_S *ecdsa.PrivateKey) *ecdsa.PrivateKey {
+//	curve := crypto.S256()         // secp256k1 曲线
+//	curveOrder := curve.Params().N // 曲线阶 q
+//
+//	// 1. 计算 r_S_Pi + H_S
+//	sum := new(big.Int).Add(r_S_Pi.D, H_S.D)
+//	sum.Mod(sum, curveOrder) // 确保在有限域内
+//
+//	// 2. 计算 (r_S_Pi + H_S)^(-1)
+//	inverse := new(big.Int).ModInverse(sum, curveOrder)
+//	if inverse == nil {
+//		fmt.Errorf("计算 (r_S_Pi + H_S)^(-1) 失败")
+//		return nil
+//	}
+//
+//	// 3. 计算 V = SK_S * inverse
+//	V := new(big.Int).Mul(SK_S.D, inverse)
+//	V.Mod(V, curveOrder) // 确保结果在有限域内
+//
+//	// 4. 创建返回值 *ecdsa.PrivateKey
+//	privateKey := &ecdsa.PrivateKey{
+//		PublicKey: ecdsa.PublicKey{
+//			Curve: curve,
+//			X:     nil,
+//			Y:     nil,
+//		},
+//		D: V,
+//	}
+//	privateKey.PublicKey.X, privateKey.PublicKey.Y = curve.ScalarBaseMult(V.Bytes())
+//	return privateKey
+//}
+//
+//// RemoveSigner 从列表中剔除签名者公钥，同时返回其下标
+//func RemoveSigner(list []*ecdsa.PublicKey, PK_S *ecdsa.PublicKey) ([]*ecdsa.PublicKey, int) {
+//	filtered := []*ecdsa.PublicKey{}
+//	index_PK_S := -1
+//
+//	for i, pk := range list {
+//		if pk.X.Cmp(PK_S.X) == 0 && pk.Y.Cmp(PK_S.Y) == 0 {
+//			index_PK_S = i // 记录签名者公钥的下标
+//		} else {
+//			filtered = append(filtered, pk)
+//		}
+//	}
+//	return filtered, index_PK_S
+//}
+//
+//// NegatePoint 实现椭圆曲线点的取反操作
+//func NegatePoint(pubKey *ecdsa.PublicKey) (*big.Int, *big.Int) {
+//	curve := pubKey.Curve
+//	p := curve.Params().P // 获取有限域的模数 p
+//	negY := new(big.Int).Sub(p, pubKey.Y)
+//	negY.Mod(negY, p) // 确保结果在有限域内
+//	return pubKey.X, negY
+//}
+//
+//func ComputeSum(randomPoint []*ecdsa.PublicKey, List_Hi []*ecdsa.PrivateKey, list []*ecdsa.PublicKey) *ecdsa.PublicKey {
+//	// 计算 Σ(randomPoint[i] + List_Hi[i] * list[i])
+//	curve := crypto.S256() // secp256k1 曲线
+//
+//	sumX, sumY := big.NewInt(0), big.NewInt(0)
+//	for i := 0; i < len(randomPoint); i++ {
+//		// List_Hi[i] * list[i]
+//		hx, hy := curve.ScalarMult(list[i].X, list[i].Y, List_Hi[i].D.Bytes())
+//
+//		// randomPoint[i] + List_Hi[i] * list[i]
+//		rpx, rpy := curve.Add(randomPoint[i].X, randomPoint[i].Y, hx, hy)
+//
+//		// 累加到总和
+//		sumX, sumY = curve.Add(sumX, sumY, rpx, rpy)
+//	}
+//	return &ecdsa.PublicKey{
+//		Curve: curve,
+//		X:     sumX,
+//		Y:     sumY,
+//	}
+//}
+//
+//// ComputeU_S 计算 U_S
+//func ComputeU_S(r_S_Pi *ecdsa.PrivateKey, PK_S *ecdsa.PublicKey, randomPoint []*ecdsa.PublicKey, List_Hi []*ecdsa.PrivateKey, list []*ecdsa.PublicKey) (*ecdsa.PublicKey, error) {
+//	curve := crypto.S256() // secp256k1 曲线
+//
+//	if len(randomPoint) != len(List_Hi) || len(List_Hi) != len(list) {
+//		return nil, fmt.Errorf("mismatched lengths: randomPoint, List_Hi, and list must have the same length")
+//	}
+//
+//	// 1. 计算 r_S_Pi * PK_S
+//	r_S_Pi_X, r_S_Pi_Y := curve.ScalarMult(PK_S.X, PK_S.Y, r_S_Pi.D.Bytes())
+//
+//	// 2. 计算 Σ(randomPoint[i] + List_Hi[i] * list[i])
+//	sumX, sumY := big.NewInt(0), big.NewInt(0)
+//	for i := 0; i < len(randomPoint); i++ {
+//		// List_Hi[i] * list[i]
+//		hx, hy := curve.ScalarMult(list[i].X, list[i].Y, List_Hi[i].D.Bytes())
+//
+//		// randomPoint[i] + List_Hi[i] * list[i]
+//		rpx, rpy := curve.Add(randomPoint[i].X, randomPoint[i].Y, hx, hy)
+//
+//		// 累加到总和
+//		sumX, sumY = curve.Add(sumX, sumY, rpx, rpy)
+//	}
+//
+//	// 3. 计算 -Σ(...) = NegatePoint(Σ(...))
+//	negSumX, negSumY := NegatePoint(&ecdsa.PublicKey{Curve: curve, X: sumX, Y: sumY})
+//
+//	// 4. 计算 U_S = r_S_Pi * PK_S + (-Σ(...))
+//	U_S_X, U_S_Y := curve.Add(r_S_Pi_X, r_S_Pi_Y, negSumX, negSumY)
+//
+//	// 5. 返回结果 U_S 作为 *ecdsa.PublicKey
+//	return &ecdsa.PublicKey{
+//		Curve: curve,
+//		X:     U_S_X,
+//		Y:     U_S_Y,
+//	}, nil
+//}
+//
